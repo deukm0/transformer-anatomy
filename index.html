@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Attention Is All You Need Transformer 구조를 블록별 행렬 계산과 역전파 학습까지 눌러 보는 인터랙티브 해부도">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Multi-Head Attention 해부도</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600&display=swap">
+</head>
+<body>
+<style>
+/* layout: 왼쪽은 논문 Figure 1 그대로(아래→위, 인코더 왼쪽·디코더 오른쪽), 누른 블록에서 빛줄기처럼 확대 패널이 옆으로 뻗어 나옴. 위에는 학습 재생 컨트롤 */
+:root{
+  --bg:#f4f5f7; --surface:#ffffff; --ink:#1c2230; --muted:#5b6476; --line:#d5d9e1;
+  --b-emb:#f7d6da; --b-att:#fbdfbd; --b-an:#f2eeb6; --b-ff:#c9e7f3; --b-lin:#dad8f4; --b-sm:#cdeac9;
+  --x:#4f8a1e; --q:#7356b5; --k:#c9711f; --v:#3d6fb0; --z:#c0485a; --n:#8a7a12; --f:#1f7f9e; --o:#6a5bb0; --res:#8a8f9c; --enc:#c0485a;
+  --fw:#2f9e5b; --bw:#d6453d;
+  --display:"Fraunces", Georgia, serif; --body:"IBM Plex Sans KR", "Apple SD Gothic Neo", sans-serif; --mono:"IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#13161c; --surface:#1b1f27; --ink:#e6e9ef; --muted:#9aa3b4; --line:#2d333f;
+  --b-emb:#5a3238; --b-att:#5b4425; --b-an:#524d21; --b-ff:#21495a; --b-lin:#3a365d; --b-sm:#2b4a2f;
+  --x:#9cc56a; --q:#a993e6; --k:#f0a464; --v:#7fa8e2; --z:#ec8494; --n:#d9c95a; --f:#6cc3df; --o:#b3a8f0; --res:#8d93a3; --enc:#ec8494;
+  --fw:#5fd08c; --bw:#ff7a70; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#13161c; --surface:#1b1f27; --ink:#e6e9ef; --muted:#9aa3b4; --line:#2d333f;
+  --b-emb:#5a3238; --b-att:#5b4425; --b-an:#524d21; --b-ff:#21495a; --b-lin:#3a365d; --b-sm:#2b4a2f;
+  --x:#9cc56a; --q:#a993e6; --k:#f0a464; --v:#7fa8e2; --z:#ec8494; --n:#d9c95a; --f:#6cc3df; --o:#b3a8f0; --res:#8d93a3; --enc:#ec8494;
+  --fw:#5fd08c; --bw:#ff7a70; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.55}
+.wrap{max-width:1560px;margin:0 auto;padding-block:20px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:14px}
+h1{font-family:var(--display);font-weight:600;font-size:clamp(1.4rem,3.6vw,2rem);line-height:1.15;margin:0}
+.lede{margin:4px 0 0;color:var(--muted);font-size:.9rem;max-width:72ch}
+.ctl{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.btn{font:500 .88rem var(--body);border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:6px 12px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn:focus-visible,.chip:focus-visible,.cell:focus-visible{outline:2px solid var(--q);outline-offset:2px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{font:500 .8rem var(--body);border:0;background:var(--surface);color:var(--muted);padding:6px 10px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.stat{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:.82rem;color:var(--muted)}
+.stat b{font-family:var(--mono);font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums}
+.spark{width:150px;height:34px;flex:none}
+.spark polyline{fill:none;stroke:var(--bw);stroke-width:1.6}
+.spark line{stroke:var(--line)}
+.preds{display:flex;gap:6px;flex-wrap:wrap}
+.pred{font-size:.78rem;border-radius:999px;padding:2px 9px;border:1px solid var(--line)}
+.pred.ok{border-color:var(--fw);color:var(--fw)}
+.stepper{display:inline-flex;gap:6px;align-items:center}
+.slbl{font-family:var(--mono);font-size:.78rem;color:var(--muted);font-variant-numeric:tabular-nums;min-width:9.5em}
+.status{flex-basis:100%;font-size:.82rem;font-family:var(--mono);color:var(--muted);min-height:1.3em}
+.stage{position:relative;display:grid;grid-template-columns:1fr;gap:18px;align-items:start}
+.fig{order:-1}
+@media (min-width:1100px){.stage{grid-template-columns:minmax(0,1fr) minmax(0,480px) minmax(0,1fr);gap:36px}.fig{order:0}}
+.fig{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px;position:relative;z-index:2;min-width:0}
+.fig svg{display:block;width:100%;height:auto;font-family:var(--body)}
+.fig text{fill:var(--ink);font-size:10px}
+.fig .lbl{fill:var(--muted);font-size:9px}
+.frm{fill:none;stroke:var(--muted);stroke-width:1;stroke-dasharray:4 3}
+.blk{cursor:pointer}
+.blk rect{stroke:color-mix(in srgb,var(--ink) 55%,transparent);stroke-width:.8}
+.blk:hover rect,.blk:focus-visible rect{stroke-width:1.6}
+.blk:focus{outline:none}
+.blk.on rect{stroke:var(--ink);stroke-width:2.2}
+.blk.fw rect{stroke:var(--fw);stroke-width:2.6}
+.blk.bw rect{stroke:var(--bw);stroke-width:2.6}
+.blk.up rect{stroke:var(--bw);stroke-width:2.6;stroke-dasharray:3 2}
+.ar path{fill:none;stroke:var(--ink);stroke-width:1;opacity:.75}
+.ar.res path{stroke:var(--res);stroke-dasharray:3 2}
+.ar.enc path{stroke:var(--enc);stroke-width:1.3}
+.ar.q path{stroke:var(--q);stroke-width:1.3}
+.ar.fw path{stroke:var(--fw);stroke-width:2.4;opacity:1;stroke-dasharray:5 4;animation:flow .5s linear infinite}
+.ar.bw path{stroke:var(--bw);stroke-width:2.4;opacity:1;stroke-dasharray:5 4;animation:flow .5s linear infinite reverse}
+@keyframes flow{to{stroke-dashoffset:-18}}
+.ah{fill:var(--ink)}
+.mk{cursor:pointer}
+.mk circle{fill:var(--surface);stroke:var(--muted);stroke-width:.8}
+.mk text{font-size:7.5px;font-family:var(--mono);fill:var(--muted);text-anchor:middle;dominant-baseline:central}
+.mk:hover circle,.mk.on circle,.mk:focus-visible circle{stroke:var(--ink);stroke-width:1.6;fill:var(--ink)}
+.mk:hover text,.mk.on text,.mk:focus-visible text{fill:var(--surface)}
+.mk:focus{outline:none}
+.beam{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;overflow:visible}
+.beam polygon{fill:var(--bc);opacity:.28}
+.beam line{stroke:var(--bc);stroke-width:1;opacity:.8}
+.panel{position:relative;z-index:2;background:var(--surface);border:1.5px solid var(--bc,var(--line));border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-width:0;overflow:auto}
+.panel>*{flex-shrink:0}
+.panel .side-tag{font-family:var(--mono);font-size:.68rem;letter-spacing:.08em;color:var(--muted)}
+.panel.pop{animation:popR .3s cubic-bezier(.2,.8,.2,1)}
+.panel.left.pop{animation-name:popL}
+@keyframes popR{from{opacity:.2;transform:scale(.92) translateX(-16px)}to{opacity:1;transform:none}}
+@keyframes popL{from{opacity:.2;transform:scale(.92) translateX(16px)}to{opacity:1;transform:none}}
+@media (max-width:1099px){.panel.pop,.panel.left.pop{animation-name:popY}@keyframes popY{from{opacity:.2;transform:translateY(-10px)}to{opacity:1;transform:none}}}
+@media (prefers-reduced-motion:reduce){.panel.pop{animation:none}.ar.fw path,.ar.bw path{animation:none}}
+.ph{display:flex;flex-direction:column;gap:1px}
+.ph h2{margin:0;font-size:.98rem;font-weight:600;line-height:1.35}
+.ph h2 small{font-family:var(--mono);font-weight:400;font-size:.72rem;color:var(--muted);margin-left:6px}
+.ph .sb{font-size:.76rem;color:var(--muted)}
+.swatch{display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--bc);border:1px solid color-mix(in srgb,var(--ink) 40%,transparent);margin-right:5px;vertical-align:0}
+.desc{margin:0;font-size:.8rem;line-height:1.5}
+.fx{font-family:var(--mono);font-size:.72rem;line-height:1.4;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 9px;overflow-x:auto;white-space:nowrap}
+.chips{display:flex;gap:5px;flex-wrap:wrap;align-items:center;font-size:.74rem;color:var(--muted)}
+.chips:empty{display:none}
+.chip{font:500 .74rem var(--body);border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:2px 9px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.eqs{display:flex;flex-direction:column;gap:5px}
+.eq-row{border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.eq-row.open{border-color:color-mix(in srgb,var(--ink) 30%,var(--line))}
+.eq-sum{all:unset;box-sizing:border-box;width:100%;display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;padding:5px 8px;cursor:pointer;border-radius:8px}
+.eq-sum::after{content:"+";margin-left:auto;font-family:var(--mono);font-size:.85rem;color:var(--muted);padding-left:6px}
+.eq-row.open .eq-sum::after{content:"−"}
+.eq-sum:hover{background:var(--bg)}
+.eq-sum:focus-visible{outline:2px solid var(--q);outline-offset:-2px}
+.sym{font-family:var(--mono);font-size:.72rem;font-weight:500;padding:1px 6px;border-radius:4px;background:color-mix(in srgb,var(--c) 16%,var(--surface));white-space:nowrap}
+.sym small{font-weight:400;color:var(--muted);font-size:.64rem}
+.rt{flex-basis:calc(100% - 20px);font-family:var(--body);font-size:.78rem;font-weight:600;color:var(--ink);display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}
+.rt small{font-weight:400;color:var(--muted);font-size:.72rem}
+.rn{font-family:var(--mono);font-size:.64rem;font-weight:500;color:var(--muted);border:1px solid var(--line);border-radius:999px;min-width:1.15rem;height:1.15rem;display:inline-flex;align-items:center;justify-content:center;align-self:center}
+.eq-row .eq{padding:2px 8px 8px}
+.eq-row .ex{margin:0 8px 8px}
+.eq{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
+.op{font-family:var(--mono);color:var(--muted);font-size:.78rem;flex:none;white-space:nowrap}
+.mat{flex:none;display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+.mat .t{font-family:var(--mono);font-size:.7rem;font-weight:500;white-space:nowrap}
+.mat .t small{color:var(--muted);font-weight:400}
+.g{display:inline-grid;gap:1px}
+.rl,.cl{font-family:var(--mono);font-size:.58rem;color:var(--muted);display:flex;align-items:center;white-space:nowrap}
+.rl{justify-content:flex-end;padding-right:4px}
+.cl{justify-content:center}
+.cell{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.64rem;width:2.35rem;height:1.4rem;border:1px solid transparent;border-radius:3px;cursor:pointer;color:var(--ink);background:color-mix(in srgb,var(--c) 14%,var(--surface));padding:0}
+.grad .cell{background:color-mix(in srgb,var(--bw) calc(var(--w,0) * 55%),var(--surface))}
+.cell.src{border-color:var(--c);background:color-mix(in srgb,var(--c) 34%,var(--surface))}
+.cell.sel{background:var(--c);color:var(--surface);border-color:var(--c)}
+.ex{border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.ex:empty{display:none}
+.ex .what{font-weight:600;font-size:.8rem}
+.ex code{font-family:var(--mono);font-size:.7rem;line-height:1.45;background:var(--bg);border-radius:6px;padding:6px 8px;display:block;overflow-x:auto;white-space:pre}
+.ex .mean{color:var(--muted);font-size:.76rem}
+.hint{font-size:.7rem;color:var(--muted)}
+.loss{width:100%;border-collapse:collapse;font-size:.74rem}
+.loss td,.loss th{padding:3px 5px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+.loss td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+.lossbox{overflow-x:auto}
+sub,sup{font-size:.72em;line-height:0}
+sup{vertical-align:.45em}sub{vertical-align:-.25em}
+.foot{font-size:.8rem;color:var(--muted);max-width:80ch;margin:0}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Multi-Head Attention 해부도</h1>
+    <p class="lede">논문 Figure 1을 가운데 두고, 인코더 쪽 블록이나 화살표를 누르면 왼쪽에, 디코더 쪽은 오른쪽에 확대돼요. 예시는 "Manners maketh man → 매너가 사람을 만든다" 번역, layer 1개, d<sub>model</sub> = 4, head 2개예요. 재생을 누르면 순전파 → loss → 역전파 → 업데이트가 반복되며 학습돼요.</p>
+  </header>
+
+  <div class="ctl">
+    <button class="btn primary" id="play">▶ 학습 재생</button>
+    <button class="btn" id="step">1 step</button>
+    <button class="btn" id="reset">↺ 초기화</button>
+    <span class="stepper"><button class="btn" id="prevS" aria-label="이전 단계">◀</button><button class="btn" id="nextS">다음 단계 ▶</button><span class="slbl" id="stageLbl">한 단계씩 넘기기</span></span>
+    <div class="seg" role="group" aria-label="재생 속도"><button id="sp-slow" aria-pressed="true">애니메이션</button><button id="sp-fast" aria-pressed="false">빠르게</button></div>
+    <div class="stat">step <b id="stepn">0</b> loss <b id="lossv">–</b> η <b>0.2</b>
+      <svg class="spark" id="spark" viewBox="0 0 150 34" aria-label="loss 그래프"><line x1="0" y1="33" x2="150" y2="33"/><polyline id="sparkl" points=""/></svg>
+    </div>
+    <div class="preds" id="preds"></div>
+    <div class="status" id="status">재생을 누르면 한 step씩 흐름이 보여요.</div>
+  </div>
+
+  <div class="stage" id="stage">
+    <svg class="beam" id="beam" aria-hidden="true"></svg>
+    <section class="panel left" id="panelE" aria-live="polite" aria-label="인코더 확대"></section>
+    <div class="fig" id="fig"></div>
+    <section class="panel" id="panelD" aria-live="polite" aria-label="디코더 확대"></section>
+  </div>
+  <p class="foot">학습 전 W는 임의의 작은 값이에요. 편의상 FFN 편향과 LayerNorm의 γ, β는 생략했고, optimizer는 Adam 대신 단순 SGD(η = 0.2)를 써요. 역전파는 이 페이지 안에서 실제로 계산한 값이에요.</p>
+</div>
+
+<script>
+/* ---------- data & tiny autograd ---------- */
+const MX=t=>t.replace(/([A-Za-z0-9)*'′])_([A-Za-z0-9]+)/g,"$1<sub>$2</sub>").replace(/\^([A-Za-z0-9*]+)/g,"<sup>$1</sup>");
+const PT=t=>t.replace(/[\^_]/g,"");
+const ENC=["Manners","maketh","man"],DEC=["‹start›","매너가","사람을"],VOC=["매너가","사람을","만든다","‹end›"],TGT=[0,1,2],LR=0.2;
+const D=n=>Array.from({length:n},(_,i)=>"d"+(i+1));
+const Z=(r,c)=>Array.from({length:r},()=>Array(c).fill(0));
+const mm=(A,B)=>A.map(r=>B[0].map((_,j)=>r.reduce((s,a,k)=>s+a*B[k][j],0)));
+const tr=M=>M[0].map((_,j)=>M.map(r=>r[j]));
+const acc=(T,U)=>T.forEach((r,i)=>r.forEach((_,j)=>r[j]+=U[i][j]));
+const f=v=>{if(v===-Infinity)return"−∞";const r=Math.round(v*100)/100;if(r===0)return"0";return (Number.isInteger(r)?String(r):r.toFixed(2)).replace("-","−")};
+const fg=v=>{const a=Math.abs(v);if(a<5e-4)return"0";return (a<0.1?v.toFixed(3):v.toFixed(2)).replace("-","−")};
+const stats=r=>{const mu=r.reduce((a,b)=>a+b,0)/r.length;const sd=Math.sqrt(r.reduce((a,b)=>a+(b-mu)**2,0)/r.length+1e-5);return{mu,sd}};
+let PARAMS={},G={},ORDER=[],seed=11;
+const rnd=()=>(seed=(seed*1103515245+12345)%2147483648)/2147483648;
+const pick=()=>[-1,-0.5,0,0.5,1][Math.floor(rnd()*5)];
+function initParams(){seed=11;PARAMS={eE:[[1,0,1,0],[0,1,0,1],[1,1,0,0]],dE:[[0,0,1,1],[1,0,0,1],[0,1,1,0]]}}
+function mk(id,o){o.id=id;o.g=Z(o.d.length,o.d[0].length);G[id]=o;ORDER.push(id);return id}
+function param(id,o,r,c){if(!PARAMS[id])PARAMS[id]=Array.from({length:r},()=>Array.from({length:c},pick));return mk(id,Object.assign({kind:o.kind||"param",d:PARAMS[id].map(x=>[...x]),learn:1},o))}
+const mmN=(id,o,a,b)=>mk(id,Object.assign({kind:"mm",a:[a,b],d:mm(G[a].d,G[b].d),r:G[a].r,k:G[b].k,back(n){acc(G[a].g,mm(n.g,tr(G[b].d)));acc(G[b].g,mm(tr(G[a].d),n.g))}},o));
+const addN=(id,o,a,b)=>mk(id,Object.assign({kind:"add",a:[a,b],d:G[a].d.map((r,i)=>r.map((v,j)=>v+G[b].d[i][j])),r:G[a].r,k:G[a].k,back(n){acc(G[a].g,n.g);acc(G[b].g,n.g)}},o));
+const lnN=(id,o,a)=>mk(id,Object.assign({kind:"ln",a:[a],d:G[a].d.map(r=>{const{mu,sd}=stats(r);return r.map(v=>(v-mu)/sd)}),r:G[a].r,k:G[a].k,back(n){n.d.forEach((y,i)=>{const g=n.g[i],sd=stats(G[a].d[i]).sd,c=y.length,mg=g.reduce((s,v)=>s+v,0)/c,mgy=g.reduce((s,v,j)=>s+v*y[j],0)/c;y.forEach((yy,j)=>G[a].g[i][j]+=(g[j]-mg-yy*mgy)/sd)})}},o));
+const reluN=(id,o,a)=>mk(id,Object.assign({kind:"relu",a:[a],d:G[a].d.map(r=>r.map(v=>Math.max(0,v))),r:G[a].r,k:G[a].k,back(n){n.g.forEach((r,i)=>r.forEach((g,j)=>{if(G[a].d[i][j]>0)G[a].g[i][j]+=g}))}},o));
+const smRows=M=>M.map(r=>{const m=Math.max(...r),e=r.map(v=>Math.exp(v-m)),s=e.reduce((x,y)=>x+y,0);return e.map(v=>v/s)});
+const smN=(id,o,a)=>mk(id,Object.assign({kind:"softmax",a:[a],d:smRows(G[a].d),r:G[a].r,k:G[a].k,back(n){n.d.forEach((y,i)=>{const s=y.reduce((t,yy,k)=>t+yy*n.g[i][k],0);y.forEach((yy,j)=>G[a].g[i][j]+=yy*(n.g[i][j]-s))})}},o));
+const pe=n=>Array.from({length:n},(_,p)=>[Math.sin(p),Math.cos(p),Math.sin(p/100),Math.cos(p/100)]);
+
+function attn(p,qs,kvs,mask){
+  for(const h of [0,1]){
+    for(const [m,src,c] of [["Q",qs,"--q"],["K",kvs,"--k"],["V",kvs,"--v"]]){
+      param(`${p}W${m}${h}`,{t:`W^${m}`,s:`head ${h+1}`,c,r:D(4),k:D(2),mean:()=>`head ${h+1}의 ${m} 가중치. 같은 자리라도 head마다 값이 달라 보는 관점이 달라져요.`},4,2);
+      mmN(`${p}${m}${h}`,{t:m,s:`head ${h+1} · 3×2`,c,mean:{Q:i=>`'${G[qs].r[i]}'가 "무엇을 찾는지"`,K:i=>`'${G[kvs].r[i]}'가 "어떤 특징으로 찾아지는지"`,V:i=>`'${G[kvs].r[i]}'가 "실제로 넘겨줄 정보"`}[m]},src,`${p}W${m}${h}`);
+    }
+    const Q=G[`${p}Q${h}`],K=G[`${p}K${h}`];
+    mk(`${p}S${h}`,{t:"S",s:`head ${h+1}`,kind:"score",mask,a:[Q.id,K.id],c:"--z",r:Q.r,k:K.r,d:Q.d.map((q,i)=>K.d.map((k,j)=>mask&&j>i?-Infinity:q.reduce((s,v,t)=>s+v*k[t],0)/Math.SQRT2)),
+      back(n){n.g.forEach((r,i)=>r.forEach((g,j)=>{if(mask&&j>i)return;const gs=g/Math.SQRT2;for(let t=0;t<2;t++){Q.g[i][t]+=gs*K.d[j][t];K.g[j][t]+=gs*Q.d[i][t]}}))},
+      mean:(i,j)=>`'${Q.r[i]}'의 질문과 '${K.r[j]}'의 특징이 얼마나 맞는지 (정규화 전)`});
+    smN(`${p}A${h}`,{t:"A",s:`head ${h+1}`,c:"--z",mean:(i,j)=>`'${Q.r[i]}'가 '${K.r[j]}'를 ${Math.round(G[`${p}A${h}`].d[i][j]*100)}% 비율로 참고. 행 합 = 1`},`${p}S${h}`);
+    mmN(`${p}Z${h}`,{t:"Z",s:`head ${h+1} · 3×2`,c:"--z",mean:i=>`head ${h+1}이 본 '${Q.r[i]}'의 새 표현. Value를 비율대로 섞은 값.`},`${p}A${h}`,`${p}V${h}`);
+  }
+  const r=G[`${p}Z0`].r,z0=`${p}Z0`,z1=`${p}Z1`;
+  mk(`${p}C`,{t:"Concat",s:"3×4",kind:"concat",a:[z0,z1],c:"--z",r,k:["h1·d1","h1·d2","h2·d1","h2·d2"],d:r.map((_,i)=>[...G[z0].d[i],...G[z1].d[i]]),back(n){n.g.forEach((row,i)=>row.forEach((g,j)=>G[j<2?z0:z1].g[i][j%2]+=g))},mean:()=>"두 head 결과를 옆으로 이어 붙인 것. 계산 없이 복사만 해요."});
+  param(`${p}WO`,{t:"W^O",s:"4×4",c:"--z",r:G[`${p}C`].k,k:D(4),mean:()=>"head 결과를 섞어 다시 d_model로 만드는 가중치. 블록에 하나만 있어요."},4,4);
+  return mmN(`${p}O`,{t:"MHA 출력",s:"3×4",c:"--z",mean:i=>`두 head의 관점이 섞인 '${r[i]}'. 크기가 입력과 같아 residual로 더할 수 있어요.`},`${p}C`,`${p}WO`);
+}
+function addnorm(p,res,sub,r){
+  addN(`${p}R`,{t:"x + Sub(x)",s:"3×4",c:"--n",mean:i=>`'${r[i]}': 블록 입력(residual) + 서브층 출력`},res,sub);
+  return lnN(`${p}N`,{t:"LayerNorm",s:"3×4",c:"--n",mean:i=>`'${r[i]}' 한 토큰 안의 4개 값끼리 평균 0, 분산 1로 맞춘 값`},`${p}R`);
+}
+function ffn(p,x,r){
+  param(`${p}W1`,{t:"W_1",s:"4×8",c:"--f",r:D(4),k:D(8),mean:()=>"FFN 첫 층 가중치. 모든 토큰이 같은 W_1을 써요."},4,8);
+  mmN(`${p}H`,{t:"xW_1",s:"3×8",c:"--f",mean:i=>`'${r[i]}'를 넓은 공간(d_ff = 8)으로 펼친 값`},x,`${p}W1`);
+  reluN(`${p}Hr`,{t:"ReLU",s:"3×8",c:"--f",mean:()=>"음수는 0으로 잘라 비선형성을 줘요."},`${p}H`);
+  param(`${p}W2`,{t:"W_2",s:"8×4",c:"--f",r:D(8),k:D(4),mean:()=>"다시 d_model = 4로 줄이는 가중치."},8,4);
+  return mmN(`${p}F`,{t:"FFN 출력",s:"3×4",c:"--f",mean:i=>`'${r[i]}' 혼자 처리된 결과. 다른 토큰과 섞이지 않아요.`},`${p}Hr`,`${p}W2`);
+}
+let LOSS=null;
+function forward(){
+  G={};ORDER=[];seed=12345;
+  param("eE",{t:"e",s:"3×4",kind:"emb",c:"--x",r:ENC,k:D(4),mean:i=>`'${ENC[i]}'의 단어 임베딩. 학습되는 테이블에서 꺼낸 행이에요.`});
+  mk("peE",{t:"PE",s:"3×4",kind:"pe",c:"--x",r:ENC,k:D(4),d:pe(3),mean:i=>`위치 ${i}라는 정보. 학습하지 않고 sin/cos 공식으로 정해져요.`});
+  addN("XE",{t:"X",s:"3×4",c:"--x",mean:i=>`인코더 층에 들어가는 '${ENC[i]}'. 단어 의미 + 위치.`},"eE","peE");
+  param("dE",{t:"e",s:"3×4",kind:"emb",c:"--x",r:DEC,k:D(4),mean:i=>`'${DEC[i]}'의 단어 임베딩 (디코더 쪽 어휘).`});
+  mk("peD",{t:"PE",s:"3×4",kind:"pe",c:"--x",r:DEC,k:D(4),d:pe(3),mean:i=>`위치 ${i}. 인코더와 같은 공식이에요.`});
+  addN("XD",{t:"Y",s:"3×4",c:"--x",mean:i=>`디코더 층에 들어가는 '${DEC[i]}'.`},"dE","peD");
+  attn("e","XE","XE",false);addnorm("ea","XE","eO",ENC);ffn("ef","eaN",ENC);addnorm("eb","eaN","efF",ENC);G.ebN.t="H_E";
+  attn("m","XD","XD",true);addnorm("da","XD","mO",DEC);
+  attn("c","daN","ebN",false);addnorm("db","daN","cO",DEC);
+  ffn("df","dbN",DEC);addnorm("dc","dbN","dfF",DEC);G.dcN.t="H_D";
+  param("Wv",{t:"W_vocab",s:"4×4",c:"--o",r:D(4),k:VOC,mean:()=>"표현을 어휘 점수로 바꾸는 가중치."},4,4);
+  mmN("L",{t:"logits",s:"3×|V|",c:"--o",mean:(i,j)=>`'${DEC[i]}' 다음에 '${VOC[j]}'가 올 점수 (정규화 전)`},"dcN","Wv");
+  mk("Pr",{t:"p(y)",s:"3×|V|",kind:"softmax",a:["L"],c:"--o",r:DEC,k:VOC,d:smRows(G.L.d),mean:(i,j)=>`'${DEC[i]}' 다음 단어가 '${VOC[j]}'일 확률`});
+  LOSS=-TGT.reduce((s,t,i)=>s+Math.log(G.Pr.d[i][t]),0)/3;
+  return LOSS;
+}
+function backward(){
+  ORDER.forEach(id=>G[id].g=Z(G[id].d.length,G[id].d[0].length));
+  G.Pr.g=G.Pr.d.map((r,i)=>r.map((_,j)=>-(j===TGT[i]?1/r[j]:0)/3));
+  G.L.g=G.Pr.d.map((r,i)=>r.map((p,j)=>(p-(j===TGT[i]?1:0))/3));
+  for(let k=ORDER.indexOf("L");k>=0;k--){const n=G[ORDER[k]];if(n.back)n.back(n)}
+}
+function update(){ORDER.forEach(id=>{const n=G[id];if(n.learn)PARAMS[id]=PARAMS[id].map((r,i)=>r.map((v,j)=>v-LR*n.g[i][j]))})}
+
+/* ---------- explain ---------- */
+const plain=n=>`${n.t}${n.s?" ("+n.s+")":""}`;
+let GRAD=false,HAS_GRAD=false;
+function explain(id,i,j){
+  const n=G[id],v=n.d[i][j],A=n.a?G[n.a[0]]:null,B=n.a&&n.a[1]?G[n.a[1]]:null;let calc="",src=[];
+  const terms=(x,y)=>x.map((a,k)=>`${f(a)}×${f(y[k])}`).join(" + ");
+  switch(n.kind){
+    case"emb":calc=`임베딩 테이블에서 '${n.r[i]}' 행을 꺼낸 값 · 학습되는 파라미터`;break;
+    case"pe":{const fn=j%2?"cos":"sin",base=j<2?1:100;calc=`PE(pos=${i}, ${n.k[j]}) = ${fn}(${i} / ${base}) = ${f(v)}`;break}
+    case"param":calc="계산 없음 · 학습되는 파라미터 (역전파로 업데이트)";break;
+    case"mm":{const col=B.d.map(r=>r[j]);src=[...A.d[i].map((_,k)=>[A.id,i,k]),...B.d.map((_,k)=>[B.id,k,j])];calc=`${A.t}의 '${A.r[i]}' 행 · ${B.t}의 ${B.k[j]} 열\n= ${terms(A.d[i],col)}\n= ${f(v)}`;break}
+    case"score":src=[...A.d[i].map((_,k)=>[A.id,i,k]),...B.d[j].map((_,k)=>[B.id,j,k])];calc=v===-Infinity?`'${n.k[j]}'는 '${n.r[i]}'보다 뒤(미래) 위치\n→ 아직 생성 안 된 단어라 −∞로 가림 (mask)`:`q · k^T / √d_k\n= (${terms(A.d[i],B.d[j])}) / 1.41\n= ${f(v)}`;break;
+    case"softmax":{const r=A.d[i];src=r.map((_,k)=>[A.id,i,k]);const fin=r.filter(x=>x>-Infinity),s=fin.reduce((a,b)=>a+Math.exp(b),0);calc=`exp(${f(r[j])}) / (${r.map(x=>`exp(${f(x)})`).join(" + ")})\n= ${f(r[j]===-Infinity?0:Math.exp(r[j]))} / ${f(s)}\n= ${f(v)}`;break}
+    case"add":src=[[A.id,i,j],[B.id,i,j]];calc=`${A.t} + ${B.t}\n= ${f(A.d[i][j])} + ${f(B.d[i][j])}\n= ${f(v)}`;break;
+    case"ln":{const r=A.d[i],{mu,sd}=stats(r);src=r.map((_,k)=>[A.id,i,k]);calc=`μ = '${A.r[i]}' 행 평균 = ${f(mu)},  σ = ${f(sd)}\n(${f(r[j])} − ${f(mu)}) / ${f(sd)} = ${f(v)}`;break}
+    case"relu":src=[[A.id,i,j]];calc=`max(0, ${f(A.d[i][j])}) = ${f(v)}`;break;
+    case"concat":{const part=Math.floor(j/2),jj=j%2,Zn=G[n.a[part]];src=[[Zn.id,i,jj]];calc=`head ${part+1}의 Z['${n.r[i]}', d${jj+1}]를 그대로 복사\n= ${f(v)}`;break}
+  }
+  if(GRAD){
+    const g=n.g[i][j];
+    if(!HAS_GRAD)return{what:`∂ℒ/∂${n.t}[${n.r[i]}, ${n.k[j]}]`,calc:"아직 역전파 전이에요. 재생이나 1 step을 눌러 주세요.",mean:"",src};
+    const upd=n.learn?`\n업데이트: ${f(v)} − ${LR} × ${fg(g)} = ${f(v-LR*g)}  (적용됨)`:"";
+    return{what:`∂ℒ/∂${plain(n)} · [${n.r[i]}, ${n.k[j]}] = ${fg(g)}`,calc:`역전파로 이 칸까지 내려온 기울기 = ${fg(g)}${upd}`,mean:n.learn?"loss를 줄이려면 이 값을 기울기의 반대 방향으로 옮겨요. 기울기가 0이면 이 칸은 loss에 영향이 없어요.":"이 칸의 기울기는 테두리로 표시된 칸들(이 값을 만든 칸)로 chain rule에 따라 다시 나눠져 내려가요.",src};
+  }
+  return{what:`${plain(n)} · [${n.r[i]}, ${n.k[j]}] = ${f(v)}`,calc,mean:n.mean?n.mean(i,j):"",src};
+}
+
+/* ---------- blocks & arrows ---------- */
+const M=id=>({m:id});
+const T=(title,row)=>(row.title=title,row);
+const attEq=(p,h,qs,kvs)=>{const cr=p==="c",ms=p==="m";return[
+ T(cr?"Query 만들기|디코더가 원문에 던지는 질문":"Query 만들기|각 토큰이 무엇을 찾는지",[M(qs),"×",M(`${p}WQ${h}`),"=",M(`${p}Q${h}`)]),
+ T(cr?"Key 만들기|원문 토큰의 색인 (H_E에서)":"Key 만들기|각 토큰을 찾게 해 줄 특징",[M(kvs),"×",M(`${p}WK${h}`),"=",M(`${p}K${h}`)]),
+ T(cr?"Value 만들기|원문에서 가져올 실제 정보 (H_E에서)":"Value 만들기|각 토큰이 넘겨줄 실제 정보",[M(kvs),"×",M(`${p}WV${h}`),"=",M(`${p}V${h}`)]),
+ T(ms?"Score → Weight|누가 누구를 얼마나 볼지, 미래 위치는 −∞":cr?"Score → Weight|번역 위치마다 원문 어디를 볼지":"Score → Weight|누가 누구를 얼마나 볼지",["QK^T/√2 →",M(`${p}S${h}`),"softmax →",M(`${p}A${h}`)]),
+ T("Head 출력|Value를 attention 비율대로 섞은 새 표현",[M(`${p}A${h}`),"×",M(`${p}V${h}`),"=",M(`${p}Z${h}`)]),
+ T("Head 합치기|두 head를 이어 붙이고 W^O로 섞기",[M(`${p}C`),"×",M(`${p}WO`),"=",M(`${p}O`)])]};
+const anEq=(p,res,sub)=>[T("Add|residual로 원래 입력 다시 더하기",[M(res),"+",M(sub),"=",M(`${p}R`)]),T("Norm|토큰마다 평균 0, 분산 1로 맞추기",["LayerNorm →",M(`${p}N`)])];
+const ffEq=(p,x)=>[T("펼치기|d_model 4 → d_ff 8로 확장",[M(x),"×",M(`${p}W1`),"=",M(`${p}H`)]),T("ReLU|음수를 0으로 잘라 비선형성 주기",["ReLU →",M(`${p}Hr`)]),T("줄이기|다시 d_model 4로",[M(`${p}Hr`),"×",M(`${p}W2`),"=",M(`${p}F`)])];
+const BLK={
+ inE:{nm:"Input Embedding + Positional Encoding",sb:"단어 ID → 벡터, 위치 정보 더하기",dm:"3×4",bb:"--b-emb",desc:"토큰 ID로 임베딩 테이블에서 행을 꺼내고 같은 크기의 위치 벡터를 더해요. Transformer는 순서를 모르기 때문에 위치를 값에 직접 넣어 줘요.",fx:"X = W_E[id(x)] + PE",eq:()=>[T("층 입력 만들기|단어 의미 + 위치 정보",[M("eE"),"+",M("peE"),"=",M("XE")])]},
+ saE:{nm:"Multi-Head Attention",sb:"인코더 self-attention · Q, K, V 모두 X에서",dm:"3×4",bb:"--b-att",heads:1,desc:"head마다 자기 W^Q, W^K, W^V로 X를 변환해 Q, K, V를 만들고, 각 토큰이 다른 토큰을 얼마나 볼지(A) 정한 뒤 Value를 섞어요. head 결과를 이어 붙여 W^O를 곱하면 블록 출력이에요.",fx:"head_i = softmax(Q_i K_i^T / √d_k) V_i ,  MHA = Concat(head_1, head_2) W^O",eq:h=>attEq("e",h,"XE","XE")},
+ anE1:{nm:"Add & Norm",sb:"X + MHA(X) → 토큰마다 LayerNorm",dm:"3×4",bb:"--b-an",desc:"원래 입력 X를 더해 단어 자체의 정보를 잃지 않게 하고(residual), 토큰 한 줄씩 평균 0, 분산 1로 맞춰요.",fx:"x = LayerNorm(X + MHA(X))",eq:()=>anEq("ea","XE","eO")},
+ ffE:{nm:"Feed Forward",sb:"토큰별 2층 MLP (4 → 8 → 4)",dm:"3×4",bb:"--b-ff",desc:"각 토큰 벡터를 넓게 펼쳤다가 ReLU를 거쳐 다시 줄여요. attention이 모은 정보를 토큰 안에서 가공하는 단계예요.",fx:"FFN(x) = max(0, xW_1)W_2",eq:()=>ffEq("ef","eaN")},
+ anE2:{nm:"Add & Norm",sb:"x + FFN(x) → LayerNorm = H_E",dm:"3×4",bb:"--b-an",desc:"두 번째 residual + LayerNorm. 이 출력이 다음 인코더 층의 입력이 되고, 마지막 층이면 H_E가 돼요.",fx:"H_E = LayerNorm(x + FFN(x))",eq:()=>anEq("eb","eaN","efF")},
+ inD:{nm:"Output Embedding + Positional Encoding",sb:"정답을 한 칸 민 입력을 벡터화",dm:"3×4",bb:"--b-emb",desc:"학습 땐 정답 '매너가 사람을 만든다'를 오른쪽으로 한 칸 밀어 ‹start› 매너가 사람을을 넣어요(teacher forcing). 같은 공식의 위치 벡터를 더해요.",fx:"Y = W′_E[id(y)] + PE",eq:()=>[T("층 입력 만들기|정답을 한 칸 민 단어 + 위치 정보",[M("dE"),"+",M("peD"),"=",M("XD")])]},
+ maD:{nm:"Masked Multi-Head Attention",sb:"디코더 self-attention · 미래 위치는 −∞",dm:"3×4",bb:"--b-att",heads:1,desc:"인코더 self-attention과 같은 계산인데 S의 대각선 위쪽(아직 생성 안 된 단어)을 −∞로 막아요. softmax 후 그 칸은 0이 돼서 이전 단어만 참조해요.",fx:"S_ij = −∞  (j > i)",eq:h=>attEq("m",h,"XD","XD")},
+ anD1:{nm:"Add & Norm",sb:"Y + MaskedMHA(Y) → LayerNorm",dm:"3×4",bb:"--b-an",desc:"이 출력에 W^Q를 곱한 게 cross-attention의 Query예요. '지금까지 번역한 상태에서 원문의 무엇이 필요하지?'라는 질문이에요.",fx:"y = LayerNorm(Y + MaskedMHA(Y))",eq:()=>anEq("da","XD","mO")},
+ caD:{nm:"Multi-Head Attention",sb:"cross-attention · Q는 디코더, K·V는 인코더 H_E",dm:"3×4",bb:"--b-att",heads:1,desc:"계산은 같고 입력 출처만 달라요. W^K, W^V는 이 디코더 블록의 가중치이고, 거기에 곱하는 재료가 인코더의 H_E예요. A의 행은 디코더 토큰, 열은 원문 토큰이라 '이 번역 위치에서 원문 어디를 볼지'를 나타내요.",fx:"Q = y W^Q ,  K = H_E W^K ,  V = H_E W^V",eq:h=>attEq("c",h,"daN","ebN")},
+ anD2:{nm:"Add & Norm",sb:"y + CrossMHA → LayerNorm",dm:"3×4",bb:"--b-an",desc:"번역 문맥(y)과 가져온 원문 정보를 합쳐요.",fx:"y' = LayerNorm(y + CrossMHA(y, H_E))",eq:()=>anEq("db","daN","cO")},
+ ffD:{nm:"Feed Forward",sb:"토큰별 2층 MLP",dm:"3×4",bb:"--b-ff",desc:"인코더 FFN과 구조는 같고 가중치는 따로예요.",fx:"FFN(y') = max(0, y′W_1)W_2",eq:()=>ffEq("df","dbN")},
+ anD3:{nm:"Add & Norm",sb:"y' + FFN → LayerNorm = H_D",dm:"3×4",bb:"--b-an",desc:"디코더 층의 최종 출력. 마지막 층이면 H_D가 돼요.",fx:"H_D = LayerNorm(y' + FFN(y'))",eq:()=>anEq("dc","dbN","dfF")},
+ lin:{nm:"Linear",sb:"표현 → 어휘 크기의 점수",dm:"3×|V|",bb:"--b-lin",desc:"d_model 벡터를 어휘 개수만큼의 점수(logit)로 바꿔요. 예시 어휘는 4개예요.",fx:"logits = H_D W_vocab",eq:()=>[T("어휘 점수 만들기|각 단어가 다음에 올 점수",[M("dcN"),"×",M("Wv"),"=",M("L")])]},
+ sm:{nm:"Softmax",sb:"점수 → 다음 단어 확률 → loss",dm:"3×|V|",bb:"--b-sm",desc:"행마다 softmax로 다음 단어 확률을 만들어요. 학습 땐 정답 단어의 확률로 loss를 계산하고, 여기서부터 기울기가 아래로 내려가요.",fx:"p(y_t) = softmax(logits),  ℒ = mean(−log p(y^*_t))",eq:()=>[T("확률로 바꾸기|행마다 softmax, 합 = 1",["softmax →",M("Pr")])],loss:1}
+};
+const ARW={
+ A1:{n:1,nm:"Inputs → Input Embedding",shape:"정수 3개",text:"Manners · maketh · man을 vocabulary 번호(토큰 ID)로 바꿔 넘겨요. 이 ID로 임베딩 테이블의 행을 꺼내요.",t:"eE"},
+ A2:{n:2,nm:"X → Multi-Head Attention",shape:"X · 3×4",text:"같은 X가 세 갈래로 나뉘어 각각 W^Q, W^K, W^V와 곱해져요. Q, K, V 모두 X에서 나오니 self-attention이에요.",t:"XE"},
+ A3:{n:3,nm:"Residual (인코더)",shape:"서브층 입력 · 3×4",text:"서브층을 건너뛰고 입력을 그대로 Add & Norm으로 보내 더해요(ResNet의 skip). 깊어져도 원래 정보와 기울기가 잘 전달돼요.",t:"XE"},
+ A4:{n:4,nm:"MHA → Add & Norm",shape:"MHA 출력 · 3×4",text:"문맥이 섞인 표현이에요. residual X와 더해진 뒤 LayerNorm돼요.",t:"eO"},
+ A5:{n:5,nm:"Add & Norm → Feed Forward",shape:"x · 3×4",text:"토큰마다 따로 같은 FFN을 통과해요. 토큰끼리 섞이는 건 attention에서만 일어나요.",t:"eaN"},
+ A6:{n:6,nm:"Feed Forward → Add & Norm",shape:"FFN 출력 · 3×4",text:"residual x와 더해진 뒤 LayerNorm돼요.",t:"efF"},
+ A7:{n:7,nm:"H_E → 디코더로",shape:"H_E · 3×4",text:"인코더 최종 contextual representation이에요. N층 디코더의 모든 cross-attention에 똑같이 전달돼요.",t:"ebN"},
+ A8:{n:8,nm:"Outputs (shifted right) → Output Embedding",shape:"정수 3개",text:"정답 '매너가 사람을 만든다'를 오른쪽으로 한 칸 민 ‹start› 매너가 사람을이에요. 학습 땐 정답을 한 번에 넣어요(teacher forcing).",t:"dE"},
+ A9:{n:9,nm:"Y → Masked Multi-Head Attention",shape:"Y · 3×4",text:"같은 Y가 Q, K, V로 세 갈래 나뉘어요(self-attention). 대신 미래 위치는 마스크로 가려요.",t:"XD"},
+ A10:{n:10,nm:"Residual (디코더)",shape:"서브층 입력 · 3×4",text:"디코더의 세 서브층 모두 입력을 건너뛰어 Add & Norm에서 더해요.",t:"XD"},
+ A11:{n:11,nm:"Masked MHA → Add & Norm",shape:"3×4",text:"지금까지 생성한 단어끼리의 문맥이에요.",t:"mO"},
+ A12:{n:12,nm:"y → Query (cross-attention)",shape:"y · 3×4 → × W^Q",text:"디코더 쪽에서는 Query만 만들어요. '이 번역 위치에서 원문의 무엇이 필요하지?'라는 질문이에요.",t:"daN"},
+ A13:{n:13,nm:"H_E → Key, Value (cross-attention)",shape:"H_E · 3×4 → × W^K, × W^V",text:"인코더 출력에 이 디코더 블록의 W^K, W^V를 곱해 Key와 Value를 만들어요. 원문의 색인과 실제 정보예요.",t:"ebN"},
+ A14:{n:14,nm:"Cross MHA → Add & Norm",shape:"3×4",text:"번역에 필요한 원문 정보를 골라 섞은 결과예요.",t:"cO"},
+ A15:{n:15,nm:"Add & Norm → Feed Forward",shape:"y' · 3×4",text:"토큰마다 따로 FFN을 통과해요.",t:"dbN"},
+ A16:{n:16,nm:"Feed Forward → Add & Norm",shape:"3×4",text:"residual y'와 더해져요.",t:"dfF"},
+ A17:{n:17,nm:"H_D → Linear",shape:"H_D · 3×4",text:"target 문맥과 source 정보가 합쳐진 디코더 최종 표현이에요.",t:"dcN"},
+ A18:{n:18,nm:"Linear → Softmax",shape:"logits · 3×|V|",text:"아직 확률이 아닌 점수예요.",t:"L"},
+ A19:{n:19,nm:"Output Probabilities",shape:"p · 3×|V|",text:"다음 단어 확률이에요. 정답과 비교한 loss가 역전파의 출발점이에요.",t:"Pr"}
+};
+
+/* ---------- figure (paper Figure 1, bottom → top) ---------- */
+function box(id,cx,y,h,lines){const b=BLK[id];const ty=y+h/2-(lines.length-1)*6;return`<g class="blk" data-b="${id}" tabindex="0" role="button" aria-label="${b.nm}"><rect x="${cx-60}" y="${y}" width="120" height="${h}" rx="4" style="fill:var(${b.bb})"/>${lines.map((l,i)=>`<text x="${cx}" y="${ty+i*12}" text-anchor="middle" dominant-baseline="central">${l}</text>`).join("")}</g>`}
+const ar=(id,ds,cls="")=>`<g class="ar ${cls}" data-a="${id}">${ds.map(d=>`<path d="${d}" marker-end="url(#ah)"/>`).join("")}</g>`;
+const mkr=(id,x,y)=>`<g class="mk" data-a="${id}" tabindex="0" role="button" aria-label="${ARW[id].nm}"><circle cx="${x}" cy="${y}" r="6.5"/><text x="${x}" y="${y}">${ARW[id].n}</text></g>`;
+function pePart(cx,side,id){const sx=cx+side*38;return`<g class="blk" data-b="${id}"><circle cx="${cx}" cy="555" r="7" fill="var(--surface)" stroke="var(--ink)" stroke-width=".8"/><path d="M${cx-4} 555H${cx+4}M${cx} 551V559" stroke="var(--ink)" stroke-width=".9"/><circle cx="${sx}" cy="555" r="9" fill="var(--surface)" stroke="var(--ink)" stroke-width=".8"/><path d="M${sx-6} 555q3 -7 6 0t6 0" fill="none" stroke="var(--ink)" stroke-width=".9"/><path d="M${sx-side*9} 555H${cx+side*7}" stroke="var(--ink)" stroke-width=".8"/><text class="lbl" x="${sx+side*13}" y="550" text-anchor="${side<0?"end":"start"}">Positional</text><text class="lbl" x="${sx+side*13}" y="561" text-anchor="${side<0?"end":"start"}">Encoding</text></g>`}
+function figure(){
+  return`<svg viewBox="0 140 440 502" role="img" aria-label="Transformer 구조 (Attention Is All You Need Figure 1)">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ah"/></marker></defs>
+<rect class="frm" x="44" y="318" width="152" height="226" rx="10"/><text class="lbl" x="38" y="436" text-anchor="end">N×</text>
+<rect class="frm" x="244" y="268" width="152" height="276" rx="10"/><text class="lbl" x="402" y="410">N×</text>
+${ar("A1",["M120 624V608"])}${ar("A2",["M120 580V564","M120 548V530H96V520","M120 530V520","M120 530H144V520"])}
+${ar("A3",["M120 538H52V466H58","M120 444H52V378H58"],"res")}
+${ar("A4",["M120 488V478"])}${ar("A5",["M120 456V432"])}${ar("A6",["M120 400V390"])}
+${ar("A7",["M120 368V300H230V402"],"enc")}${ar("A13",["M230 400V438H300V428","M285 438V428"],"enc")}
+${ar("A8",["M320 616V608"])}${ar("A9",["M320 580V564","M320 548V530H296V520","M320 530V520","M320 530H344V520"])}
+${ar("A10",["M320 538H388V466H382","M320 450H388V374H382","M320 352H388V288H382"],"res")}
+${ar("A11",["M320 488V478"])}${ar("A12",["M320 456V444H344V428"],"q")}${ar("A14",["M320 396V386"])}
+${ar("A15",["M320 364V342"])}${ar("A16",["M320 310V300"])}${ar("A17",["M320 278V244"])}${ar("A18",["M320 222V208"])}${ar("A19",["M320 186V174"])}
+${box("inE",120,580,26,["Input Embedding"])}${pePart(120,-1,"inE")}
+${box("saE",120,488,30,["Multi-Head","Attention"])}${box("anE1",120,456,20,["Add &amp; Norm"])}
+${box("ffE",120,400,30,["Feed","Forward"])}${box("anE2",120,368,20,["Add &amp; Norm"])}
+${box("inD",320,580,26,["Output Embedding"])}${pePart(320,1,"inD")}
+${box("maD",320,488,30,["Masked Multi-Head","Attention"])}${box("anD1",320,456,20,["Add &amp; Norm"])}
+${box("caD",320,396,30,["Multi-Head","Attention"])}${box("anD2",320,364,20,["Add &amp; Norm"])}
+${box("ffD",320,310,30,["Feed","Forward"])}${box("anD3",320,278,20,["Add &amp; Norm"])}
+${box("lin",320,222,20,["Linear"])}${box("sm",320,186,20,["Softmax"])}
+<text x="120" y="634" text-anchor="middle">Inputs</text>
+<text x="320" y="626" text-anchor="middle">Outputs</text><text class="lbl" x="320" y="637" text-anchor="middle">(shifted right)</text>
+<text x="320" y="156" text-anchor="middle">Output</text><text x="320" y="168" text-anchor="middle">Probabilities</text>
+${mkr("A1",138,614)}${mkr("A2",156,540)}${mkr("A3",52,500)}${mkr("A4",138,482)}${mkr("A5",138,444)}${mkr("A6",138,394)}
+${mkr("A7",175,300)}${mkr("A13",230,420)}
+${mkr("A8",338,611)}${mkr("A9",284,540)}${mkr("A10",388,500)}${mkr("A11",302,482)}${mkr("A12",358,440)}${mkr("A14",302,391)}
+${mkr("A15",302,352)}${mkr("A16",302,305)}${mkr("A17",302,258)}${mkr("A18",302,215)}${mkr("A19",302,180)}
+</svg>`;
+}
+
+/* ---------- panel ---------- */
+const head={};
+const SIDE_E=new Set(["inE","saE","anE1","ffE","anE2","A1","A2","A3","A4","A5","A6","A7"]);
+const sideOf=id=>SIDE_E.has(id)?"e":"d";
+const cur={e:{type:"b",id:"saE"},d:{type:"b",id:"caD"}};
+const sel={e:null,d:null},openRows={e:new Set(),d:new Set()};
+const cellsHTML=row=>row.map(x=>typeof x==="string"?`<span class="op">${x}</span>`:mat(x.m)).join("");
+function rowsHTML(side,rows){
+  const o=openRows[side],all=rows.every((_,k)=>o.has(k));
+  const body=rows.map((row,k)=>{const op=o.has(k);const sum=row.map(x=>typeof x==="string"?`<span class="op">${x}</span>`:`<span class="sym" style="--c:var(${G[x.m].c})">${GRAD?"∂ℒ/∂":""}${G[x.m].t} <small>${G[x.m].s||""}</small></span>`).join("");return`<div class="eq-row${op?" open":""}" data-r="${k}"><button class="eq-sum" data-row="${k}" aria-expanded="${op}">${row.title?(([a,b])=>`<span class="rt"><span class="rn">${k+1}</span>${a}${b?` <small>${b}</small>`:""}</span>`)(row.title.split("|")):""}${sum}</button>${op?`<div class="eq">${cellsHTML(row)}</div><div class="ex"></div>`:""}</div>`}).join("");
+  return`<div class="chips"><span>계산 과정</span><button class="chip" data-all="${all?0:1}">${all?"모두 접기":"모두 펼치기"}</button></div><div class="eqs ${GRAD?"grad":""}">${body}</div>`;
+}
+function mat(id){const n=G[id];const mx=GRAD?Math.max(1e-9,...n.g.flat().map(Math.abs)):1;let g=`<div class="g" style="grid-template-columns:auto repeat(${n.d[0].length},2.35rem)"><span></span>`;n.k.forEach(c=>g+=`<span class="cl">${c}</span>`);n.d.forEach((r,i)=>{g+=`<span class="rl">${n.r[i]}</span>`;r.forEach((v,j)=>{const gv=n.g[i][j];g+=`<button class="cell" style="--c:var(${n.c});--w:${GRAD?Math.abs(gv)/mx:0}" data-m="${id}" data-i="${i}" data-j="${j}" aria-label="${PT(n.t)} ${n.r[i]} ${n.k[j]}">${GRAD?fg(gv):f(v)}</button>`})});return`<div class="mat"><div class="t">${GRAD?"∂ℒ/∂":""}${n.t} <small>${n.s||""}</small></div>${g}</div></div>`}
+function lossTable(){const rows=DEC.map((t,i)=>{const p=G.Pr.d[i],best=p.indexOf(Math.max(...p));return`<tr><td>${t} 다음</td><td>${VOC[TGT[i]]}</td><td>${VOC[best]}${best===TGT[i]?" ✓":""}</td><td class="num">${f(p[TGT[i]])}</td><td class="num">${f(-Math.log(p[TGT[i]]))}</td></tr>`}).join("");return`<div class="lossbox"><table class="loss"><tr><th>위치</th><th>정답</th><th>1순위</th><th>p(정답)</th><th>−log p</th></tr>${rows}<tr><td colspan="4">평균 loss</td><td class="num">${f(LOSS)}</td></tr></table></div>`}
+const modeChips=(pre="")=>`<div class="chips">${pre}보기 <button class="chip" data-mode="v" aria-pressed="${!GRAD}">값</button><button class="chip" data-mode="g" aria-pressed="${GRAD}">기울기 ∂ℒ/∂</button>${GRAD&&!HAS_GRAD?"<span>· 아직 역전파 전</span>":""}</div>`;
+function panelHTML(side){
+  const c=cur[side],label=side==="e"?"ENCODER":"DECODER";
+  if(c.type==="b"){
+    const b=BLK[c.id],h=head[c.id]||0;
+    const eq=rowsHTML(side,b.eq(h));
+    return[`<span class="side-tag"><span class="swatch"></span>${label} · 블록</span><div class="ph"><h2>${b.nm} <small>${b.dm}</small></h2><span class="sb">${b.sb}</span></div><p class="desc">${b.desc}</p><div class="fx">${b.fx}</div>${b.loss?lossTable():""}${modeChips(b.heads?`head <button class="chip" data-h="0" aria-pressed="${h===0}">Head 1</button><button class="chip" data-h="1" aria-pressed="${h===1}">Head 2</button><span style="width:10px"></span>`:"")}${eq}<div class="hint">줄을 누르면 숫자가 펼쳐지고, 숫자 칸을 누르면 계산식이 나와요.</div>`,b.bb];
+  }
+  const a=ARW[c.id],bc=a.nm.includes("H_E")?"--enc":a.nm.includes("Residual")?"--res":a.nm.includes("Query")?"--q":"--muted";
+  return[`<span class="side-tag"><span class="swatch"></span>${label} · 화살표 ${a.n}</span><div class="ph"><h2>${a.nm}</h2><span class="sb">${a.shape}</span></div><p class="desc">${a.text}</p>${modeChips()}${rowsHTML(side,[T("전달되는 값|이 화살표를 따라 가는 행렬",[M(a.t)])])}<div class="hint">${GRAD?"역전파 때는 이 화살표를 거꾸로 따라 기울기가 내려가요.":"이 행렬이 화살표를 따라 전달돼요. 줄을 누르면 숫자가 펼쳐져요."}</div>`,bc];
+}
+function renderSide(side,pop){
+  const P=panels[side],[html,bc]=panelHTML(side);
+  P.dataset.bc=bc;P.style.setProperty("--bc",`var(${bc})`);P.innerHTML=MX(html);
+  hl(side);
+  if(pop){P.classList.remove("pop");void P.offsetWidth;P.classList.add("pop")}
+}
+function marks(){
+  const on=(t,id)=>["e","d"].filter(x=>panels[x].style.visibility!=="hidden").some(s=>cur[s].type===t&&cur[s].id===id);
+  document.querySelectorAll(".blk").forEach(g=>g.classList.toggle("on",on("b",g.dataset.b)));
+  document.querySelectorAll(".mk").forEach(g=>g.classList.toggle("on",on("a",g.dataset.a)));
+}
+function renderPanel(pop){renderSide("e",pop===true);renderSide("d",pop===true);marks();requestAnimationFrame(beamDraw)}
+function hl(side){
+  const P=panels[side],s=sel[side]||{},e=G[s.m]?explain(s.m,s.i,s.j):{src:[]};
+  P.querySelectorAll(".cell").forEach(c=>{const cm=c.dataset.m,ci=+c.dataset.i,cj=+c.dataset.j;c.classList.toggle("sel",cm===s.m&&ci===s.i&&cj===s.j);c.classList.toggle("src",e.src.some(x=>x[0]===cm&&x[1]===ci&&x[2]===cj))});
+  P.querySelectorAll(".ex").forEach(x=>x.innerHTML="");const slot=P.querySelector(`.eq-row[data-r="${s.row}"] .ex`);if(!slot||!e.what)return;
+  const esc=t=>t.replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  slot.innerHTML=MX(`<div class="what">${esc(e.what)}</div><code>${esc(e.calc)}</code>${e.mean?`<div class="mean">${esc(e.mean)}</div>`:""}`);
+}
+function beamDraw(){
+  const S=stage.getBoundingClientRect(),F=fig.getBoundingClientRect(),x=v=>v-S.left,y=v=>v-S.top;let out="";
+  for(const side of ["e","d"]){
+    const P=panels[side];if(P.style.visibility==="hidden")continue;const R=P.getBoundingClientRect();
+    const beside=side==="e"?R.right<=F.left+4:R.left>=F.right-4;
+    P.style.maxHeight=beside?F.height+"px":"";
+    if(!beside)continue;
+    const c=cur[side],el=c.type==="b"?fig.querySelector(`.blk[data-b="${c.id}"] rect`):fig.querySelector(`.mk[data-a="${c.id}"] circle`);
+    if(!el)continue;
+    const B=el.getBoundingClientRect(),R2=P.getBoundingClientRect();
+    const pts=side==="d"?[[B.right,B.top],[B.right,B.bottom],[R2.left,R2.bottom],[R2.left,R2.top]]:[[B.left,B.top],[B.left,B.bottom],[R2.right,R2.bottom],[R2.right,R2.top]];
+    const q=pts.map(p=>[x(p[0]),y(p[1])]);
+    out+=`<g style="--bc:var(${P.dataset.bc})"><polygon points="${q.map(p=>p.join(",")).join(" ")}"/><line x1="${q[0][0]}" y1="${q[0][1]}" x2="${q[3][0]}" y2="${q[3][1]}"/><line x1="${q[1][0]}" y1="${q[1][1]}" x2="${q[2][0]}" y2="${q[2][1]}"/></g>`;
+  }
+  beam.setAttribute("viewBox",`0 0 ${S.width} ${S.height}`);beam.innerHTML=out;
+}
+
+/* ---------- training & animation ---------- */
+const SEQ=["A1","inE","A2","A3","saE","A4","anE1","A5","ffE","A6","anE2","A7","A8","inD","A9","A10","maD","A11","anD1","A12","A13","caD","A14","anD2","A15","ffD","A16","anD3","A17","lin","A18","sm","A19"];
+const PARAM_BLK=["inE","saE","ffE","inD","maD","caD","ffD","lin"];
+let losses=[],stepN=0,playing=false,fast=false,busy=false;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const elOf=id=>BLK[id]?fig.querySelectorAll(`.blk[data-b="${id}"]`):fig.querySelectorAll(`.ar[data-a="${id}"]`);
+const nameOf=id=>BLK[id]?BLK[id].nm:`화살표 ${ARW[id].n} ${ARW[id].nm}`;
+function clearAnim(){fig.querySelectorAll(".fw,.bw,.up").forEach(e=>e.classList.remove("fw","bw","up"))}
+function setStatus(t){statusEl.innerHTML=MX(t.replace(/&/g,"&amp;").replace(/</g,"&lt;"))}
+function refreshStats(){
+  stepn.textContent=stepN;lossv.textContent=LOSS==null?"–":LOSS.toFixed(3);
+  const L=losses.length?losses:[LOSS],mx=Math.max(...L,0.01);
+  sparkl.setAttribute("points",L.map((v,i)=>`${L.length>1?i/(L.length-1)*148+1:1},${33-v/mx*30}`).join(" "));
+  preds.innerHTML=DEC.map((t,i)=>{const p=G.Pr.d[i],b=p.indexOf(Math.max(...p));return`<span class="pred ${b===TGT[i]?"ok":""}">${t} → ${VOC[b]}</span>`}).join("");
+}
+async function animStep(){
+  busy=true;clearAnim();
+  forward();HAS_GRAD=false;refreshStats();renderPanel(false);
+  for(const id of SEQ){if(!playingOrStep())break;elOf(id).forEach(e=>e.classList.add("fw"));setStatus(`순전파 → ${nameOf(id)}`);await sleep(340)}
+  setStatus(`loss = −mean log p(정답) = ${LOSS.toFixed(3)}`);await sleep(1000);
+  clearAnim();backward();HAS_GRAD=true;
+  for(const id of [...SEQ].reverse()){elOf(id).forEach(e=>e.classList.add("bw"));setStatus(`역전파 ← ∂ℒ/∂ ${nameOf(id)}`);await sleep(260)}
+  if(cur)renderPanel(false);
+  clearAnim();update();
+  PARAM_BLK.forEach(id=>elOf(id).forEach(e=>e.classList.add("up")));
+  setStatus(`업데이트: 모든 W와 임베딩 ← W − ${LR}·∂ℒ/∂W`);await sleep(1200);clearAnim();
+  stepN++;forward();losses.push(LOSS);refreshStats();busy=false;
+}
+let stepOnce=false;const playingOrStep=()=>playing||stepOnce;
+function fastStep(){forward();backward();HAS_GRAD=true;update();stepN++;forward();losses.push(LOSS);refreshStats()}
+async function loop(){
+  while(playing){
+    if(fast){fastStep();if(stepN%3===0){backward();renderPanel(false)}setStatus(`빠르게 학습 중 · step ${stepN} · loss ${LOSS.toFixed(3)}`);await sleep(180)}
+    else await animStep();
+    if(LOSS<0.05||stepN>=400){playing=false;setStatus(`학습 완료 · step ${stepN}에서 loss ${LOSS.toFixed(3)}. 세 위치 모두 정답을 맞혀요.`)}
+  }
+  if(HAS_GRAD)backward();renderPanel(false);playBtn.textContent="▶ 학습 재생";
+}
+const playBtn=document.getElementById("play");
+playBtn.onclick=()=>{leaveSteps();if(playing){playing=false;playBtn.textContent="▶ 학습 재생";return}if(busy)return;playing=true;playBtn.textContent="⏸ 일시정지";loop()};
+document.getElementById("step").onclick=async()=>{if(playing||busy)return;leaveSteps();if(fast){fastStep();backward();renderPanel(false);setStatus(`step ${stepN} · loss ${LOSS.toFixed(3)}`)}else{stepOnce=true;await animStep();stepOnce=false;backward();renderPanel(false)}};
+document.getElementById("reset").onclick=()=>{leaveSteps();playing=false;playBtn.textContent="▶ 학습 재생";initParams();stepN=0;losses=[];HAS_GRAD=false;forward();losses=[LOSS];clearAnim();refreshStats();renderPanel(false);setStatus("초기화했어요. W는 학습 전 값으로 돌아갔어요.")};
+const spS=document.getElementById("sp-slow"),spF=document.getElementById("sp-fast");
+spS.onclick=()=>{fast=false;spS.setAttribute("aria-pressed",true);spF.setAttribute("aria-pressed",false)};
+spF.onclick=()=>{fast=true;spF.setAttribute("aria-pressed",true);spS.setAttribute("aria-pressed",false)};
+
+/* ---------- step-by-step ---------- */
+const STAGES=[...SEQ.map(id=>({ph:"fw",id})),{ph:"loss",id:"sm"},...[...SEQ].reverse().map(id=>({ph:"bw",id})),{ph:"up"}];
+const LOSS_I=SEQ.length;let stepSide=null,sIdx=-1,snap=null,nextLoss=null;
+function showItem(id){const sd=sideOf(id);cur[sd]={type:BLK[id]?"b":"a",id};sel[sd]=null;openRows[sd]=new Set()}
+function applyStage(){
+  const st=STAGES[sIdx];clearAnim();
+  if(st.ph==="fw"||st.ph==="bw"){GRAD=st.ph==="bw";elOf(st.id).forEach(e=>e.classList.add(st.ph));showItem(st.id)}
+  if(st.ph==="loss"){GRAD=false;showItem("sm");elOf("sm").forEach(e=>e.classList.add("fw"))}
+  if(st.ph==="up"){GRAD=true;PARAM_BLK.forEach(id=>elOf(id).forEach(e=>e.classList.add("up")))}
+  const sd=st.ph==="up"?(stepSide||"d"):sideOf(st.id),other=sd==="e"?"d":"e";stepSide=sd;
+  panels[other].style.visibility="hidden";panels[sd].style.visibility="";
+  renderSide(sd,st.ph!=="up");marks();requestAnimationFrame(beamDraw);
+  const n=SEQ.length,lbl={fw:`순전파 ${sIdx+1}/${n}`,loss:"loss 계산",bw:`역전파 ${sIdx-LOSS_I}/${n}`,up:"업데이트"}[st.ph];
+  stageLbl.textContent=`step ${stepN+1} · ${lbl}`;
+  const what=id=>BLK[id]?`${BLK[id].nm}: ${BLK[id].sb}`:`화살표 ${ARW[id].n} ${ARW[id].nm} (${ARW[id].shape})`;
+  setStatus({fw:()=>`순전파 → ${what(st.id)}`,loss:()=>`ℒ = mean(−log p(정답)) = ${LOSS.toFixed(3)} · 여기서부터 기울기가 거꾸로 내려가요`,bw:()=>`역전파 ← ∂ℒ/∂ 가 ${BLK[st.id]?BLK[st.id].nm:"화살표 "+ARW[st.id].n}까지 내려옴 · 패널은 기울기 보기`,up:()=>`업데이트: 모든 W ← W − ${LR}·∂ℒ/∂W 적용 · 다음 step loss ${LOSS.toFixed(3)} → ${nextLoss.toFixed(3)} · 다음을 누르면 새 step 시작`}[st.ph]());
+}
+function stepNext(){
+  if(playing||busy)return;
+  if(sIdx===-1){forward();HAS_GRAD=false}
+  else if(STAGES[sIdx].ph==="up"){stepN++;forward();losses.push(LOSS);HAS_GRAD=false;refreshStats();sIdx=-1}
+  sIdx++;
+  if(sIdx===LOSS_I){backward();HAS_GRAD=true}
+  if(STAGES[sIdx].ph==="up"){snap=JSON.parse(JSON.stringify(PARAMS));update();const keep={G,ORDER,LOSS};forward();nextLoss=LOSS;({G,ORDER,LOSS}=keep)}
+  applyStage();
+}
+function stepPrev(){
+  if(playing||busy||sIdx<=0)return;
+  if(STAGES[sIdx].ph==="up"&&snap){PARAMS=snap;snap=null}
+  sIdx--;applyStage();
+}
+document.getElementById("nextS").onclick=stepNext;
+document.getElementById("prevS").onclick=stepPrev;
+document.addEventListener("keydown",e=>{if(e.target.closest&&e.target.closest("input,textarea"))return;if(e.key==="ArrowRight"){e.preventDefault();stepNext()}if(e.key==="ArrowLeft"){e.preventDefault();stepPrev()}});
+const stageLbl=document.getElementById("stageLbl");
+function leaveSteps(){if(sIdx!==-1){if(STAGES[sIdx].ph==="up")snap=null;sIdx=-1;stepSide=null;stageLbl.textContent="한 단계씩 넘기기";panels.e.style.visibility="";panels.d.style.visibility="";renderPanel(false)}}
+
+/* ---------- events ---------- */
+const stage=document.getElementById("stage"),fig=document.getElementById("fig"),beam=document.getElementById("beam"),panels={e:document.getElementById("panelE"),d:document.getElementById("panelD")},statusEl=document.getElementById("status"),stepn=document.getElementById("stepn"),lossv=document.getElementById("lossv"),sparkl=document.getElementById("sparkl"),preds=document.getElementById("preds");
+function choose(t,id){const s=sideOf(id);if(cur[s].type===t&&cur[s].id===id)return;cur[s]={type:t,id};sel[s]=null;openRows[s]=new Set();renderSide(s,true);marks();requestAnimationFrame(beamDraw);if(stage.getBoundingClientRect().width<1100)panels[s].scrollIntoView({behavior:"smooth",block:"start"})}
+fig.addEventListener("click",e=>{const b=e.target.closest(".blk"),m=e.target.closest(".mk");if(m)choose("a",m.dataset.a);else if(b)choose("b",b.dataset.b)});
+fig.addEventListener("keydown",e=>{if(e.key!=="Enter"&&e.key!==" ")return;const b=e.target.closest(".blk"),m=e.target.closest(".mk");if(m||b){e.preventDefault();m?choose("a",m.dataset.a):choose("b",b.dataset.b)}});
+for(const side of ["e","d"])panels[side].addEventListener("click",e=>{
+  const c=e.target.closest(".cell");if(c){sel[side]={m:c.dataset.m,i:+c.dataset.i,j:+c.dataset.j,row:+c.closest(".eq-row").dataset.r};hl(side);return}
+  const sm=e.target.closest(".eq-sum");if(sm){const k=+sm.dataset.row,o=openRows[side];o.has(k)?o.delete(k):o.add(k);renderSide(side,false);requestAnimationFrame(beamDraw);return}
+  const ch=e.target.closest(".chip");if(!ch)return;
+  if(ch.dataset.all!=null){const n=panels[side].querySelectorAll(".eq-sum").length;openRows[side]=ch.dataset.all==="1"?new Set([...Array(n).keys()]):new Set();renderSide(side,false);requestAnimationFrame(beamDraw);return}
+  if(ch.dataset.h!=null){head[cur[side].id]=+ch.dataset.h;renderSide(side,false);requestAnimationFrame(beamDraw)}
+  if(ch.dataset.mode){GRAD=ch.dataset.mode==="g";renderPanel(false)}
+});
+new ResizeObserver(beamDraw).observe(stage);
+window.addEventListener("resize",beamDraw);
+initParams();forward();losses=[LOSS];fig.innerHTML=figure();refreshStats();renderPanel(true);
+</script>
+</body>
+</html>
